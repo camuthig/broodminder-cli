@@ -12,12 +12,12 @@ import logging
 from asyncio import sleep
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 
 import typer
-from pydantic import BaseModel, parse_obj_as, TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 from rich.console import Console
 from rich.table import Table
 from bleak import BleakScanner
@@ -146,7 +146,7 @@ def parse_broodminder_data(
 
     Args:
         device: The BLE device
-        broodminder_device: The saved Broodminder device
+        saved_device: The saved Broodminder device
         adv_data: The advertisement data
 
     Returns:
@@ -385,7 +385,7 @@ def output_json(devices: List[BroodminderData]) -> None:
 
     data = []
     for device in devices:
-        device_data = {
+        device_data: dict[str, Any] = {
             "address": device.address,
             "rssi": device.rssi,
             "model_number": device.model_number,
