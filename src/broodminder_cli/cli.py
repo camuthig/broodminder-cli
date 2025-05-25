@@ -7,14 +7,17 @@ using the Bluetooth Low Energy (BLE) advertising protocol.
 """
 
 import asyncio
+import json
 import logging
 from asyncio import sleep
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 from dataclasses import dataclass
 from enum import Enum
 
 import typer
+from pydantic import BaseModel, parse_obj_as, TypeAdapter
 from rich.console import Console
 from rich.table import Table
 from bleak import BleakScanner
@@ -44,7 +47,7 @@ KG_TO_LBS = 2.20462
 # Scale factor for Broodminder scales
 # This assumes a basic configuration with the front of the hive on a 2x4 and the back on the scales.
 # Calculations can be taken from https://doc.mybroodminder.com/87_physics_and_tech_stuff/
-SCALE_FACTOR = 2.09
+SCALE_FACTOR = 1.91
 
 # Create Typer app and console
 app = typer.Typer(help="Scan for Broodminder BLE devices")
@@ -82,8 +85,60 @@ class BroodminderData:
     raw_data: Optional[bytes] = None
 
 
+type DeviceAddress = str
+
+
+class BroodminderDevice(BaseModel):
+    address: DeviceAddress
+    name: str | None
+
+
+device_dict_adapter = TypeAdapter(dict[DeviceAddress, BroodminderDevice])
+
+
+# Define the path to store device information
+def get_devices_file_path():
+    # Create in user's home directory under .broodminder
+    home_dir = Path.home()
+    config_dir = home_dir / ".broodminder"
+    config_dir.mkdir(exist_ok=True)
+    return config_dir / "devices.json"
+
+
+# Function to load existing devices
+def load_saved_devices() -> dict[DeviceAddress, BroodminderDevice]:
+    file_path = get_devices_file_path()
+    if file_path.exists():
+        try:
+            with open(file_path, 'r') as f:
+                return device_dict_adapter.validate_json(f.read())
+        except json.JSONDecodeError:
+            # Handle corrupt file
+            return {}
+    return {}
+
+
+# Function to save devices
+def save_devices(saved_devices: dict[DeviceAddress, BroodminderDevice], found_devices: list[BroodminderData]) -> None:
+    # Update the saved devices
+    for device in found_devices:
+        address = device.address
+        if address not in saved_devices:
+            saved_devices[address] = BroodminderDevice(address=address, name=None)
+
+        # Update name only if it's not None
+        if device.name is not None:
+            saved_devices[address].name = device.name
+
+    file_path = get_devices_file_path()
+    with open(file_path, 'w') as f:
+        json.dump(device_dict_adapter.dump_python(saved_devices), f, indent=2)
+
+
+
 def parse_broodminder_data(
         device: BLEDevice,
+        saved_device: BroodminderDevice | None,
         adv_data: AdvertisementData
 ) -> Optional[BroodminderData]:
     """
@@ -91,6 +146,7 @@ def parse_broodminder_data(
 
     Args:
         device: The BLE device
+        broodminder_device: The saved Broodminder device
         adv_data: The advertisement data
 
     Returns:
@@ -103,13 +159,14 @@ def parse_broodminder_data(
     # Check for Broodminder manufacturer ID
     for manufacturer_id, data in adv_data.manufacturer_data.items():
         if manufacturer_id == BROODMINDER_MANUFACTURER_ID:
-            return _process_broodminder_manufacturer_data(device, adv_data, data)
+            return _process_broodminder_manufacturer_data(device, saved_device, adv_data, data)
 
     return None
 
 
 def _process_broodminder_manufacturer_data(
         device: BLEDevice,
+        saved_device: BroodminderDevice | None,
         adv_data: AdvertisementData,
         data: bytes
 ) -> Optional[BroodminderData]:
@@ -127,7 +184,7 @@ def _process_broodminder_manufacturer_data(
 
     result = BroodminderData(
         address=device.address,
-        name=adv_data.local_name,
+        name=adv_data.local_name or saved_device.name,
         rssi=adv_data.rssi,
         model_number=model_number,
         model_name=model_name,
@@ -188,13 +245,12 @@ def _process_broodminder_manufacturer_data(
                 result.total_weight_lbs = result.weight_right_lbs * SCALE_FACTOR
 
         # Parse weight for scale models
-        if model_number in (43, 47, 49, 56, 57, 58) and len(data) > 13:
-            # Weight left (bytes 10-11)
-            if len(data) > 19:
-                total_weight_raw = data[19] + (data[20] << 8)
-                if total_weight_raw != 0x7FFF:  # 0x7FFF indicates no reading
-                    result.total_weight_kg = (total_weight_raw - 32767) / 100  # Convert to kg
-                    result.total_weight_lbs = result.total_weight_kg * KG_TO_LBS  # Convert to lbs
+        if model_number in (43, 47, 49, 56, 57, 58) and len(data) > 19:
+            # Weight left (bytes 19-20)
+            total_weight_raw = data[19] + (data[20] << 8)
+            if total_weight_raw != 0x7FFF:  # 0x7FFF indicates no reading
+                result.total_weight_kg = (total_weight_raw - 32767) / 100  # Convert to kg
+                result.total_weight_lbs = result.total_weight_kg * KG_TO_LBS  # Convert to lbs
 
     return result
 
@@ -283,8 +339,17 @@ async def scan_for_broodminder_devices(
     """
     devices_found = []
 
+    # Load existing devices
+    saved_devices = load_saved_devices()
+
+
     def callback(device: BLEDevice, adv_data: AdvertisementData):
-        broodminder_data = parse_broodminder_data(device, adv_data)
+        saved_device = saved_devices.get(device.address)
+        if saved_device is None:
+            saved_device = BroodminderDevice(address=device.address, name=adv_data.local_name)
+
+        broodminder_data = parse_broodminder_data(device, saved_device, adv_data)
+
         if broodminder_data:
             # Check if we've already seen this device
             for existing in devices_found:
@@ -307,6 +372,9 @@ async def scan_for_broodminder_devices(
     await scanner.start()
     await asyncio.sleep(duration)
     await scanner.stop()
+
+    # Save the updated devices
+    save_devices(saved_devices, devices_found)
 
     return devices_found
 
