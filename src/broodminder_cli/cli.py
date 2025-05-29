@@ -13,7 +13,6 @@ from asyncio import sleep
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Any
-from dataclasses import dataclass
 from enum import Enum
 
 import typer
@@ -41,13 +40,11 @@ MODEL_NAMES = {
     58: "BroodMinder-WSXLR"
 }
 
-# Conversion factor from kg to lbs
-KG_TO_LBS = 2.20462
-
 # Scale factor for Broodminder scales
 # This assumes a basic configuration with the front of the hive on a 2x4 and the back on the scales.
 # Calculations can be taken from https://doc.mybroodminder.com/87_physics_and_tech_stuff/
-SCALE_FACTOR = 1.91
+# SCALE_FACTOR = 1.91
+SCALE_FACTOR = 2.0
 
 # Create Typer app and console
 app = typer.Typer(help="Scan for Broodminder BLE devices")
@@ -60,29 +57,6 @@ class OutputFormat(str, Enum):
     TABLE = "table"
     JSON = "json"
     CSV = "csv"
-
-
-@dataclass
-class BroodminderData:
-    """Class for storing parsed Broodminder device data"""
-    address: str
-    name: str
-    rssi: int
-    model_number: int
-    model_name: str
-    firmware_version: str
-    temperature_f: Optional[float] = None
-    temperature_c: Optional[float] = None
-    humidity: Optional[float] = None
-    weight_left_kg: Optional[float] = None
-    weight_right_kg: Optional[float] = None
-    total_weight_kg: Optional[float] = None
-    weight_left_lbs: Optional[float] = None
-    weight_right_lbs: Optional[float] = None
-    total_weight_lbs: Optional[float] = None
-    battery: Optional[int] = None
-    elapsed_time: Optional[int] = None
-    raw_data: Optional[bytes] = None
 
 
 type DeviceAddress = str
@@ -224,24 +198,19 @@ def _process_broodminder_manufacturer_data(
             if len(data) > 11:
                 weight_left_raw = data[10] + (data[11] << 8)
                 if weight_left_raw != 0x7FFF:  # 0x7FFF indicates no reading
-                    result.weight_left_kg = (weight_left_raw - 32767) / 100  # Convert to kg
-                    result.weight_left_lbs = result.weight_left_kg * KG_TO_LBS  # Convert to lbs
+                    result.weight_left_lbs = (weight_left_raw - 32767) / 100
 
             # Weight right (bytes 12-13)
             if len(data) > 13:
                 weight_right_raw = data[12] + (data[13] << 8)
                 if weight_right_raw != 0x7FFF:
-                    result.weight_right_kg = (weight_right_raw - 32767) / 100  # Convert to kg
-                    result.weight_right_lbs = result.weight_right_kg * KG_TO_LBS  # Convert to lbs
+                    result.weight_right_ = (weight_right_raw - 32767) / 100
 
-            if result.weight_left_kg is not None and result.weight_right_kg is not None:
-                result.total_weight_kg = (result.weight_left_kg + result.weight_right_kg) / 2 * SCALE_FACTOR
+            if result.weight_left_lbs is not None and result.weight_right_lbs is not None:
                 result.total_weight_lbs = (result.weight_left_lbs + result.weight_right_lbs) / 2 * SCALE_FACTOR
-            elif result.weight_left_kg is not None:
-                result.total_weight_kg = result.weight_left_kg * SCALE_FACTOR
+            elif result.weight_left_lbs is not None:
                 result.total_weight_lbs = result.weight_left_lbs * SCALE_FACTOR
-            elif result.weight_right_kg is not None:
-                result.total_weight_kg = result.weight_right_kg * SCALE_FACTOR
+            elif result.weight_right_lbs is not None:
                 result.total_weight_lbs = result.weight_right_lbs * SCALE_FACTOR
 
         # Parse weight for scale models
@@ -249,8 +218,7 @@ def _process_broodminder_manufacturer_data(
             # Weight left (bytes 19-20)
             total_weight_raw = data[19] + (data[20] << 8)
             if total_weight_raw != 0x7FFF:  # 0x7FFF indicates no reading
-                result.total_weight_kg = (total_weight_raw - 32767) / 100  # Convert to kg
-                result.total_weight_lbs = result.total_weight_kg * KG_TO_LBS  # Convert to lbs
+                result.total_weight_lbs = (total_weight_raw - 32767) / 100  * SCALE_FACTOR
 
     return result
 
@@ -276,10 +244,10 @@ def format_broodminder_data(data: BroodminderData) -> str:
         result.append(f"Humidity: {data.humidity}%")
 
     if data.total_weight_lbs is not None:
-        result.append(f"Total Weight: {data.total_weight_lbs:.2f} lbs ({data.total_weight_kg:.2f} kg)")
+        result.append(f"Total Weight: {data.total_weight_lbs:.2f} lbs")
         if data.weight_left_lbs is not None and data.weight_right_lbs is not None:
-            result.append(f"  Left: {data.weight_left_lbs:.2f} lbs ({data.weight_left_kg:.2f} kg)")
-            result.append(f"  Right: {data.weight_right_lbs:.2f} lbs ({data.weight_right_kg:.2f} kg)")
+            result.append(f"  Left: {data.weight_left_lbs:.2f} lbs")
+            result.append(f"  Right: {data.weight_right_lbs:.2f} lbs")
 
     return "\n".join(result)
 
@@ -407,16 +375,13 @@ def output_json(devices: List[BroodminderData]) -> None:
         if device.humidity is not None:
             device_data["humidity"] = device.humidity
 
-        if device.total_weight_kg is not None:
-            device_data["total_weight_kg"] = device.total_weight_kg
+        if device.total_weight_lbs is not None:
             device_data["total_weight_lbs"] = device.total_weight_lbs
 
-            if device.weight_left_kg is not None:
-                device_data["weight_left_kg"] = device.weight_left_kg
+            if device.weight_left_lbs is not None:
                 device_data["weight_left_lbs"] = device.weight_left_lbs
 
-            if device.weight_right_kg is not None:
-                device_data["weight_right_kg"] = device.weight_right_kg
+            if device.weight_right_lbs is not None:
                 device_data["weight_right_lbs"] = device.weight_right_lbs
 
         data.append(device_data)
