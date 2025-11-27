@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class BroodminderData:
     """Class for storing parsed Broodminder device data"""
+
     address: str
     name: str
     friendly_name: str
@@ -20,4 +21,3 @@ class BroodminderData:
     battery: int | None = None
     elapsed_time: int | None = None
     raw_data: bytes | None = None
-

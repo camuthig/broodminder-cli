@@ -23,3 +23,20 @@ build-backend = "uv_build"
 dev = [
     "ruff>=0.14.6",
 ]
+
+[tool.ruff]
+line-length = 128
+
+[tool.ruff.format]
+line-ending = "auto"
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint]
+select = ["I"]
+
+[tool.ruff.lint.isort]
+force-single-line = true
+force-sort-within-sections = true
+lines-after-imports = 2

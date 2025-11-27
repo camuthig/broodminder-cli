@@ -27,7 +27,7 @@ from broodminder_cli.types import BroodminderData
 from broodminder_cli.influx import InfluxDBConfig, send_batch_to_influxdb
 
 # Define manufacturer ID for IF, LLC (Broodminder)
-BROODMINDER_MANUFACTURER_ID = 0x028d  # 653 decimal
+BROODMINDER_MANUFACTURER_ID = 0x028D  # 653 decimal
 
 # Model number to name mapping
 MODEL_NAMES = {
@@ -39,7 +39,7 @@ MODEL_NAMES = {
     52: "BroodMinder-SubHub",
     56: "BroodMinder-WS",
     57: "BroodMinder-WSLR",
-    58: "BroodMinder-WSXLR"
+    58: "BroodMinder-WSXLR",
 }
 
 # Scale factor for Broodminder scales
@@ -55,6 +55,7 @@ console = Console()
 
 class OutputFormat(str, Enum):
     """Output format options"""
+
     TEXT = "text"
     TABLE = "table"
     JSON = "json"
@@ -87,7 +88,7 @@ def load_saved_devices() -> dict[DeviceAddress, BroodminderDevice]:
     file_path = get_devices_file_path()
     if file_path.exists():
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 return device_dict_adapter.validate_json(f.read())
         except json.JSONDecodeError:
             # Handle corrupt file
@@ -108,15 +109,12 @@ def save_devices(saved_devices: dict[DeviceAddress, BroodminderDevice], found_de
             saved_devices[address].name = device.name
 
     file_path = get_devices_file_path()
-    with open(file_path, 'w') as f:
+    with open(file_path, "w") as f:
         json.dump(device_dict_adapter.dump_python(saved_devices), f, indent=2)
 
 
-
 def parse_broodminder_data(
-        device: BLEDevice,
-        saved_device: BroodminderDevice | None,
-        adv_data: AdvertisementData
+    device: BLEDevice, saved_device: BroodminderDevice | None, adv_data: AdvertisementData
 ) -> Optional[BroodminderData]:
     """
     Parse BLE advertisement data from Broodminder devices.
@@ -142,10 +140,7 @@ def parse_broodminder_data(
 
 
 def _process_broodminder_manufacturer_data(
-        device: BLEDevice,
-        saved_device: BroodminderDevice | None,
-        adv_data: AdvertisementData,
-        data: bytes
+    device: BLEDevice, saved_device: BroodminderDevice | None, adv_data: AdvertisementData, data: bytes
 ) -> Optional[BroodminderData]:
     """Process the manufacturer-specific data for Broodminder devices"""
     # Verify we have enough data (at least the model and version bytes)
@@ -167,7 +162,7 @@ def _process_broodminder_manufacturer_data(
         model_number=model_number,
         model_name=model_name,
         firmware_version=f"{version_major}.{version_minor}",
-        raw_data=data
+        raw_data=data,
     )
 
     # Process the rest of the data based on the model number
@@ -183,14 +178,14 @@ def _process_broodminder_manufacturer_data(
         if model_number in (41, 42, 43) and len(data) > 8:
             # Temperature calculation for older models
             temp_raw = data[7] + (data[8] << 8)
-            result.temperature_f = (temp_raw / 65536 * 165 - 40) * 9/5 + 32
-            result.temperature_c = (temp_raw / 65536 * 165 - 40)
+            result.temperature_f = (temp_raw / 65536 * 165 - 40) * 9 / 5 + 32
+            result.temperature_c = temp_raw / 65536 * 165 - 40
         elif model_number >= 47 and len(data) > 8:
             # Temperature calculation for newer models
             temp_raw = data[7] + (data[8] << 8)
             if temp_raw > 5000:  # Temperature is in centigrade + 5000
                 result.temperature_c = (temp_raw - 5000) / 100
-                result.temperature_f = result.temperature_c * 9/5 + 32
+                result.temperature_f = result.temperature_c * 9 / 5 + 32
 
         # Parse humidity (byte 14) - only for TH models
         if model_number in (42, 47) and len(data) > 14:
@@ -222,7 +217,7 @@ def _process_broodminder_manufacturer_data(
             # Weight left (bytes 19-20)
             total_weight_raw = data[19] + (data[20] << 8)
             if total_weight_raw != 0x7FFF:  # 0x7FFF indicates no reading
-                result.total_weight_lbs = (total_weight_raw - 32767) / 100  * SCALE_FACTOR
+                result.total_weight_lbs = (total_weight_raw - 32767) / 100 * SCALE_FACTOR
 
     return result
 
@@ -288,16 +283,14 @@ def create_rich_table(devices: List[BroodminderData]) -> Table:
             battery_str,
             temp_str,
             humidity_str,
-            weight_str
+            weight_str,
         )
 
     return table
 
 
 async def scan_for_broodminder_devices(
-        duration: float = 5.0,
-        show_raw: bool = False,
-        output_format: OutputFormat = OutputFormat.TEXT
+    duration: float = 5.0, show_raw: bool = False, output_format: OutputFormat = OutputFormat.TEXT
 ) -> List[BroodminderData]:
     """
     Scan for Broodminder devices and return discovered device data.
@@ -314,7 +307,6 @@ async def scan_for_broodminder_devices(
 
     # Load existing devices
     saved_devices = load_saved_devices()
-
 
     def callback(device: BLEDevice, adv_data: AdvertisementData):
         saved_device = saved_devices.get(device.address)
@@ -401,9 +393,19 @@ def output_csv(devices: List[BroodminderData]) -> None:
 
     output = io.StringIO()
     fieldnames = [
-        "address", "name", "rssi", "model_name", "firmware_version",
-        "battery", "temperature_c", "temperature_f", "humidity",
-        "total_weight_lbs", "weight_left_lbs", "weight_right_lbs", "timestamp"
+        "address",
+        "name",
+        "rssi",
+        "model_name",
+        "firmware_version",
+        "battery",
+        "temperature_c",
+        "temperature_f",
+        "humidity",
+        "total_weight_lbs",
+        "weight_left_lbs",
+        "weight_right_lbs",
+        "timestamp",
     ]
 
     writer = csv.DictWriter(output, fieldnames=fieldnames)
@@ -432,31 +434,11 @@ def output_csv(devices: List[BroodminderData]) -> None:
 
 @app.command()
 def scan(
-        duration: float = typer.Option(
-            10.0,
-            "--duration", "-d",
-            help="Duration in seconds to scan for devices"
-        ),
-        output_format: OutputFormat = typer.Option(
-            OutputFormat.TABLE,
-            "--format", "-f",
-            help="Output format"
-        ),
-        raw: bool = typer.Option(
-            False,
-            "--raw", "-r",
-            help="Show raw data bytes"
-        ),
-        verbose: bool = typer.Option(
-            False,
-            "--verbose", "-v",
-            help="Enable verbose logging"
-        ),
-        output_file: Optional[str] = typer.Option(
-            None,
-            "--output", "-o",
-            help="Output file (default is stdout)"
-        ),
+    duration: float = typer.Option(10.0, "--duration", "-d", help="Duration in seconds to scan for devices"),
+    output_format: OutputFormat = typer.Option(OutputFormat.TABLE, "--format", "-f", help="Output format"),
+    raw: bool = typer.Option(False, "--raw", "-r", help="Show raw data bytes"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Output file (default is stdout)"),
 ):
     """Scan for Broodminder BLE devices"""
     if verbose:
@@ -465,11 +447,7 @@ def scan(
     try:
         # Run the async scan function
         with console.status(f"Scanning for Broodminder devices for {duration} seconds..."):
-            devices = asyncio.run(scan_for_broodminder_devices(
-                duration=duration,
-                show_raw=raw,
-                output_format=output_format
-            ))
+            devices = asyncio.run(scan_for_broodminder_devices(duration=duration, show_raw=raw, output_format=output_format))
 
         # If no devices found
         if not devices:
@@ -496,32 +474,52 @@ def scan(
             with open(output_file, "w") as f:
                 if output_format == OutputFormat.JSON:
                     import json
+
                     json.dump([device.__dict__ for device in devices], f, default=str, indent=2)
                 elif output_format == OutputFormat.CSV:
                     import csv
+
                     fieldnames = [
-                        "address", "name", "rssi", "model_name", "firmware_version",
-                        "battery", "temperature_c", "temperature_f", "humidity",
-                        "total_weight_lbs", "weight_left_lbs", "weight_right_lbs", "timestamp"
+                        "address",
+                        "name",
+                        "rssi",
+                        "model_name",
+                        "firmware_version",
+                        "battery",
+                        "temperature_c",
+                        "temperature_f",
+                        "humidity",
+                        "total_weight_lbs",
+                        "weight_left_lbs",
+                        "weight_right_lbs",
+                        "timestamp",
                     ]
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
                     for device in devices:
-                        writer.writerow({
-                            "address": device.address,
-                            "name": device.name,
-                            "rssi": device.rssi,
-                            "model_name": device.model_name,
-                            "firmware_version": device.firmware_version,
-                            "battery": device.battery if device.battery is not None else "",
-                            "temperature_c": f"{device.temperature_c:.1f}" if device.temperature_c is not None else "",
-                            "temperature_f": f"{device.temperature_f:.1f}" if device.temperature_f is not None else "",
-                            "humidity": device.humidity if device.humidity is not None else "",
-                            "total_weight_lbs": f"{device.total_weight_lbs:.2f}" if device.total_weight_lbs is not None else "",
-                            "weight_left_lbs": f"{device.weight_left_lbs:.2f}" if device.weight_left_lbs is not None else "",
-                            "weight_right_lbs": f"{device.weight_right_lbs:.2f}" if device.weight_right_lbs is not None else "",
-                            "timestamp": datetime.now().isoformat(),
-                        })
+                        writer.writerow(
+                            {
+                                "address": device.address,
+                                "name": device.name,
+                                "rssi": device.rssi,
+                                "model_name": device.model_name,
+                                "firmware_version": device.firmware_version,
+                                "battery": device.battery if device.battery is not None else "",
+                                "temperature_c": f"{device.temperature_c:.1f}" if device.temperature_c is not None else "",
+                                "temperature_f": f"{device.temperature_f:.1f}" if device.temperature_f is not None else "",
+                                "humidity": device.humidity if device.humidity is not None else "",
+                                "total_weight_lbs": f"{device.total_weight_lbs:.2f}"
+                                if device.total_weight_lbs is not None
+                                else "",
+                                "weight_left_lbs": f"{device.weight_left_lbs:.2f}"
+                                if device.weight_left_lbs is not None
+                                else "",
+                                "weight_right_lbs": f"{device.weight_right_lbs:.2f}"
+                                if device.weight_right_lbs is not None
+                                else "",
+                                "timestamp": datetime.now().isoformat(),
+                            }
+                        )
                 else:
                     with console.capture() as capture:
                         if output_format == OutputFormat.TABLE:
@@ -538,27 +536,16 @@ def scan(
         console.print(f"[bold red]Error:[/bold red] {e}")
         if verbose:
             import traceback
+
             console.print(traceback.format_exc())
         raise typer.Exit(code=1)
 
 
 @app.command()
 def monitor(
-        duration: float = typer.Option(
-            -1,
-            "--duration", "-d",
-            help="Duration in seconds to monitor devices (-1 for continuous)"
-        ),
-        interval: float = typer.Option(
-            1.0,
-            "--interval", "-i",
-            help="Update interval in seconds"
-        ),
-        verbose: bool = typer.Option(
-            False,
-            "--verbose", "-v",
-            help="Enable verbose logging"
-        ),
+    duration: float = typer.Option(-1, "--duration", "-d", help="Duration in seconds to monitor devices (-1 for continuous)"),
+    interval: float = typer.Option(1.0, "--interval", "-i", help="Update interval in seconds"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
 ):
     """
     Continuously monitor Broodminder devices
@@ -590,11 +577,9 @@ def monitor(
                 status.update("Scanning for devices...")
 
                 # Scan for devices
-                found_devices = asyncio.run(scan_for_broodminder_devices(
-                    duration=interval,
-                    show_raw=False,
-                    output_format=OutputFormat.TEXT
-                ))
+                found_devices = asyncio.run(
+                    scan_for_broodminder_devices(duration=interval, show_raw=False, output_format=OutputFormat.TEXT)
+                )
 
                 # Update our device dictionary
                 for device in found_devices:
@@ -621,51 +606,23 @@ def monitor(
         console.print(f"[bold red]Error:[/bold red] {e}")
         if verbose:
             import traceback
+
             console.print(traceback.format_exc())
         raise typer.Exit(code=1)
 
+
 @app.command()
 def influx_push(
-    duration: float = typer.Option(
-        -1,
-        "--duration", "-d",
-        help="Duration in seconds to monitor devices (-1 for continuous)"
-    ),
-    interval: float = typer.Option(
-        1.0,
-        "--interval", "-i",
-        help="Update interval in seconds"
-    ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose", "-v",
-        help="Enable verbose logging"
-    ),
+    duration: float = typer.Option(-1, "--duration", "-d", help="Duration in seconds to monitor devices (-1 for continuous)"),
+    interval: float = typer.Option(1.0, "--interval", "-i", help="Update interval in seconds"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
     url: str = typer.Option(
-        None,
-        "--url",
-        help="InfluxDB server URL (defaults to INFLUXDB_URL env var or http://localhost:8086)"
+        None, "--url", help="InfluxDB server URL (defaults to INFLUXDB_URL env var or http://localhost:8086)"
     ),
-    token: str = typer.Option(
-        None,
-        "--token",
-        help="InfluxDB authentication token (defaults to INFLUXDB_TOKEN env var)"
-    ),
-    org: str = typer.Option(
-        None,
-        "--org",
-        help="InfluxDB organization (defaults to INFLUXDB_ORG env var or 'my-org')"
-    ),
-    bucket: str = typer.Option(
-        None,
-        "--bucket",
-        help="InfluxDB bucket (defaults to INFLUXDB_BUCKET env var or 'broodminder')"
-    ),
-    display: bool = typer.Option(
-        True,
-        "--display/--no-display",
-        help="Display device data in the console"
-    ),
+    token: str = typer.Option(None, "--token", help="InfluxDB authentication token (defaults to INFLUXDB_TOKEN env var)"),
+    org: str = typer.Option(None, "--org", help="InfluxDB organization (defaults to INFLUXDB_ORG env var or 'my-org')"),
+    bucket: str = typer.Option(None, "--bucket", help="InfluxDB bucket (defaults to INFLUXDB_BUCKET env var or 'broodminder')"),
+    display: bool = typer.Option(True, "--display/--no-display", help="Display device data in the console"),
 ):
     """
     Continuously monitor Broodminder devices and push data to InfluxDB
@@ -700,11 +657,9 @@ def influx_push(
                 status.update("Scanning for devices...")
 
                 # Scan for devices
-                found_devices = asyncio.run(scan_for_broodminder_devices(
-                    duration=interval,
-                    show_raw=False,
-                    output_format=OutputFormat.TEXT
-                ))
+                found_devices = asyncio.run(
+                    scan_for_broodminder_devices(duration=interval, show_raw=False, output_format=OutputFormat.TEXT)
+                )
 
                 # Update our device dictionary
                 for device in found_devices:
@@ -714,13 +669,7 @@ def influx_push(
                 if devices:
                     device_list = list(devices.values())
                     try:
-                        send_batch_to_influxdb(
-                            data_list=device_list,
-                            url=url,
-                            token=token,
-                            org=org,
-                            bucket=bucket
-                        )
+                        send_batch_to_influxdb(data_list=device_list, url=url, token=token, org=org, bucket=bucket)
                         status.update(f"Pushed data for {len(device_list)} devices to InfluxDB")
                     except Exception as e:
                         console.print(f"[bold red]Error writing to InfluxDB:[/bold red] {e}")
@@ -747,9 +696,10 @@ def influx_push(
         console.print(f"[bold red]Error:[/bold red] {e}")
         if verbose:
             import traceback
+
             console.print(traceback.format_exc())
         raise typer.Exit(code=1)
-    
-    
+
+
 def main():
     app()
