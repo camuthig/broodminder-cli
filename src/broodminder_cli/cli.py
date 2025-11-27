@@ -9,7 +9,7 @@ using the Bluetooth Low Energy (BLE) advertising protocol.
 import asyncio
 import json
 import logging
-from asyncio import sleep
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Any
@@ -331,8 +331,7 @@ async def scan_for_broodminder_devices(
                 if show_raw and broodminder_data.raw_data:
                     console.print(f"Raw data: {broodminder_data.raw_data.hex()}")
 
-    scanner = BleakScanner()
-    scanner.register_detection_callback(callback)
+    scanner = BleakScanner(detection_callback=callback)
 
     await scanner.start()
     await asyncio.sleep(duration)
@@ -688,7 +687,7 @@ def influx_push(
                 status.update(f"Waiting {interval} seconds for next scan...")
 
                 # Sleep for the interval
-                sleep(interval)
+                time.sleep(interval)
 
     except KeyboardInterrupt:
         console.print("\nInfluxDB push stopped by user.", style="yellow")
