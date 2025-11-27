@@ -6,6 +6,7 @@ class BroodminderData:
     """Class for storing parsed Broodminder device data"""
     address: str
     name: str
+    friendly_name: str
     rssi: int
     model_number: int
     model_name: str

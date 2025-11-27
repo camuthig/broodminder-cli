@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "bleak>=0.22.3",
+    "influxdb-client>=1.49.0",
     "notebook>=7.4.2",
     "pydantic>=2.11.5",
     "typer>=0.15.4",
@@ -17,3 +18,8 @@ broodminder = "broodminder_cli.cli:main"  # This defines the CLI command
 [build-system]
 requires = ["uv_build>=0.7.8,<0.8.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.6",
+]

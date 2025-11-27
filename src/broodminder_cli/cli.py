@@ -23,6 +23,8 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
+from broodminder_cli.types import BroodminderData
+from broodminder_cli.influx import InfluxDBConfig, send_batch_to_influxdb
 
 # Define manufacturer ID for IF, LLC (Broodminder)
 BROODMINDER_MANUFACTURER_ID = 0x028d  # 653 decimal
@@ -65,6 +67,7 @@ type DeviceAddress = str
 class BroodminderDevice(BaseModel):
     address: DeviceAddress
     name: str | None
+    friendly_name: str | None = None
 
 
 device_dict_adapter = TypeAdapter(dict[DeviceAddress, BroodminderDevice])
@@ -98,7 +101,7 @@ def save_devices(saved_devices: dict[DeviceAddress, BroodminderDevice], found_de
     for device in found_devices:
         address = device.address
         if address not in saved_devices:
-            saved_devices[address] = BroodminderDevice(address=address, name=None)
+            saved_devices[address] = BroodminderDevice(address=address, name=None, friendly_name=None)
 
         # Update name only if it's not None
         if device.name is not None:
@@ -159,6 +162,7 @@ def _process_broodminder_manufacturer_data(
     result = BroodminderData(
         address=device.address,
         name=adv_data.local_name or saved_device.name,
+        friendly_name=saved_device.friendly_name,
         rssi=adv_data.rssi,
         model_number=model_number,
         model_name=model_name,
@@ -204,7 +208,7 @@ def _process_broodminder_manufacturer_data(
             if len(data) > 13:
                 weight_right_raw = data[12] + (data[13] << 8)
                 if weight_right_raw != 0x7FFF:
-                    result.weight_right_ = (weight_right_raw - 32767) / 100
+                    result.weight_right_lbs = (weight_right_raw - 32767) / 100
 
             if result.weight_left_lbs is not None and result.weight_right_lbs is not None:
                 result.total_weight_lbs = (result.weight_left_lbs + result.weight_right_lbs) / 2 * SCALE_FACTOR
@@ -227,6 +231,7 @@ def format_broodminder_data(data: BroodminderData) -> str:
     """Format Broodminder data for display"""
     result = [
         f"Device: {data.model_name} ({data.address})",
+        f"Name: {data.friendly_name} ({data.name})",
         f"RSSI: {data.rssi} dBm",
         f"Firmware: v{data.firmware_version}",
     ]
@@ -619,5 +624,132 @@ def monitor(
             console.print(traceback.format_exc())
         raise typer.Exit(code=1)
 
+@app.command()
+def influx_push(
+    duration: float = typer.Option(
+        -1,
+        "--duration", "-d",
+        help="Duration in seconds to monitor devices (-1 for continuous)"
+    ),
+    interval: float = typer.Option(
+        1.0,
+        "--interval", "-i",
+        help="Update interval in seconds"
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Enable verbose logging"
+    ),
+    url: str = typer.Option(
+        None,
+        "--url",
+        help="InfluxDB server URL (defaults to INFLUXDB_URL env var or http://localhost:8086)"
+    ),
+    token: str = typer.Option(
+        None,
+        "--token",
+        help="InfluxDB authentication token (defaults to INFLUXDB_TOKEN env var)"
+    ),
+    org: str = typer.Option(
+        None,
+        "--org",
+        help="InfluxDB organization (defaults to INFLUXDB_ORG env var or 'my-org')"
+    ),
+    bucket: str = typer.Option(
+        None,
+        "--bucket",
+        help="InfluxDB bucket (defaults to INFLUXDB_BUCKET env var or 'broodminder')"
+    ),
+    display: bool = typer.Option(
+        True,
+        "--display/--no-display",
+        help="Display device data in the console"
+    ),
+):
+    """
+    Continuously monitor Broodminder devices and push data to InfluxDB
+
+    This will scan for devices at the specified interval and push the data
+    to an InfluxDB server. Press Ctrl+C to stop.
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    try:
+        # Get InfluxDB configuration for display
+        config = InfluxDBConfig(url=url, token=token, org=org, bucket=bucket)
+        console.print(f"Starting Broodminder InfluxDB push to {config.bucket} at {config.url}", style="bold green")
+        console.print("Press Ctrl+C to stop.", style="bold green")
+
+        # Use a dictionary to store devices by address
+        devices = {}
+        start_time = datetime.now()
+
+        # Create a single status that we'll reuse
+        with console.status("Monitoring devices...") as status:
+            # Main monitoring loop
+            while True:
+                # Check if we've exceeded the duration
+                if duration > 0:
+                    elapsed = (datetime.now() - start_time).total_seconds()
+                    if elapsed >= duration:
+                        break
+
+                # Update status message
+                status.update("Scanning for devices...")
+
+                # Scan for devices
+                found_devices = asyncio.run(scan_for_broodminder_devices(
+                    duration=interval,
+                    show_raw=False,
+                    output_format=OutputFormat.TEXT
+                ))
+
+                # Update our device dictionary
+                for device in found_devices:
+                    devices[device.address] = device
+
+                # Push data to InfluxDB
+                if devices:
+                    device_list = list(devices.values())
+                    try:
+                        send_batch_to_influxdb(
+                            data_list=device_list,
+                            url=url,
+                            token=token,
+                            org=org,
+                            bucket=bucket
+                        )
+                        status.update(f"Pushed data for {len(device_list)} devices to InfluxDB")
+                    except Exception as e:
+                        console.print(f"[bold red]Error writing to InfluxDB:[/bold red] {e}")
+
+                # Display the current devices if requested
+                if display:
+                    console.clear()
+                    console.print(f"Broodminder InfluxDB Push - Last update: {datetime.now()}", style="bold blue")
+                    console.print(f"Found {len(devices)} devices", style="green")
+
+                    if devices:
+                        table = create_rich_table(list(devices.values()))
+                        console.print(table)
+
+                # Update status message
+                status.update(f"Waiting {interval} seconds for next scan...")
+
+                # Sleep for the interval
+                sleep(interval)
+
+    except KeyboardInterrupt:
+        console.print("\nInfluxDB push stopped by user.", style="yellow")
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        if verbose:
+            import traceback
+            console.print(traceback.format_exc())
+        raise typer.Exit(code=1)
+    
+    
 def main():
     app()
