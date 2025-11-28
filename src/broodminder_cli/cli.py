@@ -16,7 +16,7 @@ from typing import List, Optional, Any
 from enum import Enum
 
 import typer
-from pydantic import BaseModel, TypeAdapter
+import msgspec
 from rich.console import Console
 from rich.table import Table
 from bleak import BleakScanner
@@ -65,13 +65,10 @@ class OutputFormat(str, Enum):
 type DeviceAddress = str
 
 
-class BroodminderDevice(BaseModel):
+class BroodminderDevice(msgspec.Struct):
     address: DeviceAddress
     name: str | None
     friendly_name: str | None = None
-
-
-device_dict_adapter = TypeAdapter(dict[DeviceAddress, BroodminderDevice])
 
 
 # Define the path to store device information
@@ -88,9 +85,9 @@ def load_saved_devices() -> dict[DeviceAddress, BroodminderDevice]:
     file_path = get_devices_file_path()
     if file_path.exists():
         try:
-            with open(file_path, "r") as f:
-                return device_dict_adapter.validate_json(f.read())
-        except json.JSONDecodeError:
+            with open(file_path, "rb") as f:
+                return msgspec.json.decode(f.read(), type=dict[DeviceAddress, BroodminderDevice])
+        except (json.JSONDecodeError, msgspec.DecodeError):
             # Handle corrupt file
             return {}
     return {}
@@ -109,8 +106,10 @@ def save_devices(saved_devices: dict[DeviceAddress, BroodminderDevice], found_de
             saved_devices[address].name = device.name
 
     file_path = get_devices_file_path()
+    # Convert msgspec Structs to plain dicts for JSON serialization
+    devices_dict = {address: msgspec.structs.asdict(device) for address, device in saved_devices.items()}
     with open(file_path, "w") as f:
-        json.dump(device_dict_adapter.dump_python(saved_devices), f, indent=2)
+        json.dump(devices_dict, f, indent=2)
 
 
 def parse_broodminder_data(
@@ -276,7 +275,7 @@ def create_rich_table(devices: List[BroodminderData]) -> Table:
 
         table.add_row(
             device.address,
-            device.name,
+            device.friendly_name or device.name,
             device.model_name,
             str(device.rssi),
             f"v{device.firmware_version}",
