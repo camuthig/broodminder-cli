@@ -5,12 +5,14 @@ This module provides functionality to send data from Broodminder devices
 to an InfluxDB instance for storage and visualization.
 """
 
-import os
 from datetime import datetime
 from datetime import timezone
-from typing import Optional, List
+import os
+from typing import List
+from typing import Optional
 
-from influxdb_client import InfluxDBClient, Point
+from influxdb_client import InfluxDBClient
+from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from broodminder_cli.types import BroodminderData

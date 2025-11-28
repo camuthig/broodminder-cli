@@ -1,7 +1,9 @@
-import msgspec
+from dataclasses import asdict
+from dataclasses import dataclass
 
 
-class BroodminderData(msgspec.Struct):
+@dataclass
+class BroodminderData:
     """Class for storing parsed Broodminder device data"""
 
     address: str

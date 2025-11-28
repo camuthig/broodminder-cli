@@ -7,24 +7,29 @@ using the Bluetooth Low Energy (BLE) advertising protocol.
 """
 
 import asyncio
+from dataclasses import asdict
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
 import json
 import logging
-import time
-from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Any
-from enum import Enum
+import time
+from typing import Any
+from typing import List
+from typing import Optional
 
-import typer
-import msgspec
-from rich.console import Console
-from rich.table import Table
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
+from rich.console import Console
+from rich.table import Table
+import typer
 
+from broodminder_cli.influx import InfluxDBConfig
+from broodminder_cli.influx import send_batch_to_influxdb
 from broodminder_cli.types import BroodminderData
-from broodminder_cli.influx import InfluxDBConfig, send_batch_to_influxdb
+
 
 # Define manufacturer ID for IF, LLC (Broodminder)
 BROODMINDER_MANUFACTURER_ID = 0x028D  # 653 decimal
@@ -65,7 +70,8 @@ class OutputFormat(str, Enum):
 type DeviceAddress = str
 
 
-class BroodminderDevice(msgspec.Struct):
+@dataclass
+class BroodminderDevice:
     address: DeviceAddress
     name: str | None
     friendly_name: str | None = None
@@ -85,9 +91,10 @@ def load_saved_devices() -> dict[DeviceAddress, BroodminderDevice]:
     file_path = get_devices_file_path()
     if file_path.exists():
         try:
-            with open(file_path, "rb") as f:
-                return msgspec.json.decode(f.read(), type=dict[DeviceAddress, BroodminderDevice])
-        except (json.JSONDecodeError, msgspec.DecodeError):
+            with open(file_path, "r") as f:
+                data = json.load(f)
+                return {addr: BroodminderDevice(**device) for addr, device in data.items()}
+        except (json.JSONDecodeError, TypeError):
             # Handle corrupt file
             return {}
     return {}
@@ -106,8 +113,8 @@ def save_devices(saved_devices: dict[DeviceAddress, BroodminderDevice], found_de
             saved_devices[address].name = device.name
 
     file_path = get_devices_file_path()
-    # Convert msgspec Structs to plain dicts for JSON serialization
-    devices_dict = {address: msgspec.structs.asdict(device) for address, device in saved_devices.items()}
+    # Convert dataclasses to plain dicts for JSON serialization
+    devices_dict = {address: asdict(device) for address, device in saved_devices.items()}
     with open(file_path, "w") as f:
         json.dump(devices_dict, f, indent=2)
 
